@@ -1,0 +1,10 @@
+html, body {
+  background: #111;
+  color: #EEE;
+  font-family: monospace;
+}
+
+.tile {
+  display: inline-block;
+}
+
