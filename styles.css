@@ -8,3 +8,16 @@ html, body {
   display: inline-block;
 }
 
+
+.wall {
+  color: #888;
+}
+
+.ground {
+  color: #555;
+}
+
+.player {
+  color: yellow;
+}
+
