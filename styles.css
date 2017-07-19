@@ -2,6 +2,7 @@ html, body {
   background: #111;
   color: #EEE;
   font-family: monospace;
+  font-size: larger;
 }
 
 .tile {
@@ -21,3 +22,10 @@ html, body {
   color: yellow;
 }
 
+.game {
+  display: flex;
+}
+
+.log {
+  margin: 20px;
+}

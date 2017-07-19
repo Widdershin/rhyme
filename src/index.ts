@@ -8,6 +8,7 @@ import {
   State,
   Tile,
   Floor,
+  Player,
   makeCoordinate,
   updateState,
   loadMap,
@@ -23,9 +24,22 @@ interface Sinks {
   DOM: Stream<VNode>;
 }
 
+interface ClientState {
+  gameState: State;
+  log: Array<string>;
+}
+
 function characterFor(tile: Tile): String {
   if (tile.space && tile.space.type === 'player') {
     return '@';
+  }
+
+  if (tile.space && tile.space.type === 'direWolf') {
+    return 'w';
+  }
+
+  if (tile.floor.size > 0) {
+    return 'w';
   }
 
   if (tile.space && tile.space.type === 'wall') {
@@ -51,9 +65,12 @@ function stateToArray(state: State): Floor {
 
       const wall = state.wallTiles.get(coordinate);
       const entity = state.entities.get(coordinate);
+      const deadEntities = state.deadEntities.get(coordinate);
 
       const tile = {
         ground,
+
+        floor: deadEntities || new Set(),
 
         space: entity || wall
       };
@@ -71,7 +88,20 @@ function classesFor(tile: Tile) {
   };
 }
 
-function view(state: State) {
+function renderStats(state: State) {
+  const playerState = state.entities.get(state.playerPosition) as Player;
+
+  const stats = [
+    `Health: ${playerState.health}`,
+    `Time: ${playerState.time} turn(s)`
+  ].join('\n');
+
+  return pre('.stats-inner', stats);
+}
+
+function view(clientState: ClientState) {
+  const state = clientState.gameState;
+
   return div('.game', [
     pre(
       '.floor',
@@ -83,7 +113,11 @@ function view(state: State) {
           )
         )
       )
-    )
+    ),
+    div('.ui', [
+      div('.stats', renderStats(state)),
+      div('.log', clientState.log.slice(-6).map(message => div('.message', message)))
+    ])
   ]);
 }
 
@@ -101,7 +135,7 @@ const map = `
           ###########.#########
           #...................#
           #...................#
-          #...................#
+          #..........w........#
           #...................#           #####
           #...................#############...#
           #...................................#
@@ -114,8 +148,9 @@ const map = `
 `;
 
 function main(sources: Sources): Sinks {
-  const initialState: State = {
-    ...loadMap(map)
+  const initialState: ClientState = {
+    gameState: loadMap(map),
+    log: []
   };
 
   const keydown$ = sources.DOM
@@ -124,11 +159,23 @@ function main(sources: Sources): Sinks {
     .map((event: KeyboardEvent) => keycode(event.keyCode));
 
   const state$ = keydown$.fold((state, key) => {
-    if (key === 'r') {
-      return reverseUpdate(state);
+    const gameStateReducer = key === 'r' ? reverseUpdate : updateState;
+
+    const playerState = state.gameState.entities.get(state.gameState.playerPosition) as Player;
+
+    if (key === 'r' && playerState.time === 0) {
+      state.log.push(`You cannot rewind with no time stored, you must go forward.`);
+
+      return state;
     }
 
-    return updateState(state, key);
+    const logger = (message: string) => state.log.push(message);
+
+    return {
+      ...state,
+
+      gameState: gameStateReducer(state.gameState, key, logger)
+    };
   }, initialState);
 
   return {
