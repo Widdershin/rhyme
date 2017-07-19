@@ -10,7 +10,7 @@ import {
   Tile
 } from '../src/game';
 
-const options = ['h', 'j', 'k', 'l'];
+const options = ['h', 'j', 'k', 'l', '.'];
 
 const arbitrary = jsc.array((jsc as any).oneof(options.map(jsc.constant)));
 

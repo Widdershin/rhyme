@@ -53,6 +53,32 @@ function characterFor(tile: Tile): String {
   return ' ';
 }
 
+interface Chunk<T> {
+  item: T;
+  count: number;
+}
+
+function chunk<T>(array: T[]): Chunk<T>[] {
+  const result = [];
+  let lastItem = null;
+  let lastChunk = undefined;
+
+  for (let item of array) {
+    if (item === lastItem) {
+      (lastChunk as Chunk<T>).count += 1;
+    }
+
+    if (item !== lastItem) {
+      lastChunk = { count: 1, item };
+      result.push(lastChunk);
+    }
+
+    lastItem = item;
+  }
+
+  return result;
+}
+
 function stateToArray(state: State): Floor {
   const array = Array(state.height).fill(0).map((_, row) =>
     Array(state.width).fill(0).map((__, column) => {
@@ -116,7 +142,15 @@ function view(clientState: ClientState) {
     ),
     div('.ui', [
       div('.stats', renderStats(state)),
-      div('.log', clientState.log.slice(-6).map(message => div('.message', message)))
+      div(
+        '.log',
+        chunk(clientState.log).slice(-6).map(chunk =>
+          div(
+            '.message',
+            `${chunk.item}` + ((chunk.count > 1) ? ` x${chunk.count}` : ``)
+          )
+        )
+      )
     ])
   ]);
 }
@@ -161,10 +195,14 @@ function main(sources: Sources): Sinks {
   const state$ = keydown$.fold((state, key) => {
     const gameStateReducer = key === 'r' ? reverseUpdate : updateState;
 
-    const playerState = state.gameState.entities.get(state.gameState.playerPosition) as Player;
+    const playerState = state.gameState.entities.get(
+      state.gameState.playerPosition
+    ) as Player;
 
     if (key === 'r' && playerState.time === 0) {
-      state.log.push(`You cannot rewind with no time stored, you must go forward.`);
+      state.log.push(
+        `You cannot rewind with no time stored, you must go forward.`
+      );
 
       return state;
     }

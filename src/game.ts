@@ -136,13 +136,14 @@ function updatePlayer(state: State, motion: Coordinate, log: Log): State {
   const newPosition = add(state.playerPosition, motion);
 
   if (state.wallTiles.has(newPosition)) {
+    log(`You decide not to walk into the wall after all.`);
     playerState.actions.push({ type: 'move', motion: makeCoordinate(0, 0) });
     return state;
   }
 
   const entity = state.entities.get(newPosition);
 
-  if (entity && entity.alive) {
+  if (entity !== playerState && entity && entity.alive) {
     const damage = 5 + d(5);
     log(`Hit ${entity.type} for ${damage} damage`);
     entity.health -= damage; // TODO - damage?
@@ -173,7 +174,8 @@ export function updateState(state: State, key: string, log: Log): State {
     h: makeCoordinate(0, -1),
     j: makeCoordinate(1, 0),
     k: makeCoordinate(-1, 0),
-    l: makeCoordinate(0, 1)
+    l: makeCoordinate(0, 1),
+    '.': makeCoordinate(0, 0)
   };
 
   if (!motion[key]) {
