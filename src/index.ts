@@ -9,10 +9,13 @@ import {
   Tile,
   Floor,
   Player,
+  Coordinate,
   makeCoordinate,
   updateState,
   loadMap,
-  reverseUpdate
+  reverseUpdate,
+  calculateVisibleTiles,
+  makeCoordinates
 } from './game';
 
 interface Sources {
@@ -26,7 +29,10 @@ interface Sinks {
 
 interface ClientState {
   gameState: State;
-  log: Array<string>;
+  log: string[];
+  visibleTiles: Set<Coordinate>;
+  seenTiles: Set<Coordinate>;
+  coordinates: Coordinate[][];
 }
 
 function characterFor(tile: Tile): String {
@@ -79,38 +85,37 @@ function chunk<T>(array: T[]): Chunk<T>[] {
   return result;
 }
 
-function stateToArray(state: State): Floor {
-  const array = Array(state.height).fill(0).map((_, row) =>
-    Array(state.width).fill(0).map((__, column) => {
-      const coordinate = makeCoordinate(row, column);
-      let ground: string | null = null;
+function stateToArray(coordinates: Coordinate[][], state: State): Floor {
+ return coordinates.map(row =>
+   row.map(coordinate => {
+    let ground: string | null = null;
 
-      if (state.groundTiles.has(coordinate)) {
-        ground = 'ground';
-      }
+    if (state.groundTiles.has(coordinate)) {
+      ground = 'ground';
+    }
 
-      const wall = state.wallTiles.get(coordinate);
-      const entity = state.entities.get(coordinate);
-      const deadEntities = state.deadEntities.get(coordinate);
+    const wall = state.wallTiles.get(coordinate);
+    const entity = state.entities.get(coordinate);
+    const deadEntities = state.deadEntities.get(coordinate);
 
-      const tile = {
-        ground,
+    const tile = {
+      ground,
 
-        floor: deadEntities || new Set(),
+      floor: deadEntities || new Set(),
 
-        space: entity || wall
-      };
+      space: entity || wall
+    };
 
-      return tile;
-    })
-  );
-
-  return array;
+    return tile;
+   })
+ );
 }
 
-function classesFor(tile: Tile) {
+function classesFor(tile: Tile, coordinate: Coordinate, state: ClientState) {
   return {
-    [(tile.space && tile.space.type) || tile.ground]: true
+    [(tile.space && tile.space.type) || tile.ground]: true,
+    visible: state.visibleTiles.has(coordinate),
+    seen: state.seenTiles.has(coordinate)
   };
 }
 
@@ -131,11 +136,21 @@ function view(clientState: ClientState) {
   return div('.game', [
     pre(
       '.floor',
-      stateToArray(state).map(row =>
+      stateToArray(clientState.coordinates, state).map((row, rowIndex) =>
         div(
           '.row',
-          row.map(tile =>
-            div('.tile', { class: classesFor(tile) }, characterFor(tile))
+          row.map((tile, columnIndex) =>
+            div(
+              '.tile',
+              {
+                class: classesFor(
+                  tile,
+                  makeCoordinate(rowIndex, columnIndex),
+                  clientState
+                )
+              },
+              characterFor(tile)
+            )
           )
         )
       )
@@ -144,12 +159,14 @@ function view(clientState: ClientState) {
       div('.stats', renderStats(state)),
       div(
         '.log',
-        chunk(clientState.log).slice(-6).map(chunk =>
-          div(
-            '.message',
-            `${chunk.item}` + ((chunk.count > 1) ? ` x${chunk.count}` : ``)
+        chunk(clientState.log)
+          .slice(-6)
+          .map(chunk =>
+            div(
+              '.message',
+              `${chunk.item}` + (chunk.count > 1 ? ` x${chunk.count}` : ``)
+            )
           )
-        )
       )
     ])
   ]);
@@ -182,10 +199,17 @@ const map = `
 `;
 
 function main(sources: Sources): Sinks {
+  const gameState = loadMap(map);
+  const coordinates = makeCoordinates(gameState);
+
   const initialState: ClientState = {
-    gameState: loadMap(map),
-    log: []
+    gameState,
+    log: [],
+    visibleTiles: calculateVisibleTiles(coordinates, gameState),
+    seenTiles: new Set(),
+    coordinates
   };
+
 
   const keydown$ = sources.DOM
     .select('body')
@@ -208,11 +232,17 @@ function main(sources: Sources): Sinks {
     }
 
     const logger = (message: string) => state.log.push(message);
+    const gameState = gameStateReducer(state.gameState, key, logger);
+    const visibleTiles = calculateVisibleTiles(state.coordinates, gameState);
 
     return {
       ...state,
 
-      gameState: gameStateReducer(state.gameState, key, logger)
+      gameState,
+
+      visibleTiles,
+
+      seenTiles: new Set([...state.seenTiles, ...visibleTiles])
     };
   }, initialState);
 

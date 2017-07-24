@@ -69,19 +69,21 @@ export interface State {
   deadEntities: Map<Coordinate, Set<Entity>>;
 }
 
-export type CoordinateCache = { [key: string]: Coordinate };
-const coordinateCache: CoordinateCache = {};
+export type CoordinateCache = Map<string, Coordinate>;
+const coordinateCache: CoordinateCache = new Map();
 
 export function makeCoordinate(row: number, column: number): Coordinate {
   const key = `${row},${column}`;
 
-  if (key in coordinateCache) {
-    return coordinateCache[key];
+  if (coordinateCache.has(key)) {
+    return coordinateCache.get(key) as Coordinate;
   }
 
-  const coordinate = Object.freeze({ row, column });
+  const coordinate = { row, column };
 
-  return (coordinateCache[key] = coordinate);
+  coordinateCache.set(key, coordinate);
+
+  return coordinate;
 }
 
 function d(n: number): number {
@@ -90,6 +92,31 @@ function d(n: number): number {
 
 function add(a: Coordinate, b: Coordinate): Coordinate {
   return makeCoordinate(a.row + b.row, a.column + b.column);
+}
+
+function subtract(a: Coordinate, b: Coordinate): Coordinate {
+  return makeCoordinate(a.row - b.row, a.column - b.column);
+}
+
+function subtractMutable(a: Coordinate, b: Coordinate): Coordinate {
+  a.row -= b.row;
+  a.column -= b.column;
+
+  return a;
+}
+
+function length(c: Coordinate): number {
+  return Math.sqrt(Math.pow(c.row, 2) + Math.pow(c.column, 2));
+}
+
+function normalize(c: Coordinate): Coordinate {
+  const l = length(c);
+
+  if (l === 0) {
+    return makeCoordinate(0, 0);
+  }
+
+  return makeCoordinate(c.row / l, c.column / l);
 }
 
 function movePlayer(state: State, motion: Coordinate) {
@@ -119,8 +146,10 @@ function deadify(state: State, entity: Entity, coordinate: Coordinate) {
   }
 }
 
-function undeadify (state: State, entity: Entity, coordinate: Coordinate) {
-  const deadEntitiesAtCoordinate = state.deadEntities.get(coordinate) as Set<Entity>;
+function undeadify(state: State, entity: Entity, coordinate: Coordinate) {
+  const deadEntitiesAtCoordinate = state.deadEntities.get(coordinate) as Set<
+    Entity
+  >;
   deadEntitiesAtCoordinate.delete(entity);
 
   state.entities.set(coordinate, entity);
@@ -128,10 +157,6 @@ function undeadify (state: State, entity: Entity, coordinate: Coordinate) {
 
 function updatePlayer(state: State, motion: Coordinate, log: Log): State {
   const playerState = state.entities.get(state.playerPosition) as Player;
-
-  if (playerState.time > 0) {
-    playerState.time -= 1;
-  }
 
   const newPosition = add(state.playerPosition, motion);
 
@@ -141,6 +166,10 @@ function updatePlayer(state: State, motion: Coordinate, log: Log): State {
     return state;
   }
 
+  if (playerState.time > 0) {
+    playerState.time -= 1;
+  }
+
   const entity = state.entities.get(newPosition);
 
   if (entity !== playerState && entity && entity.alive) {
@@ -148,7 +177,12 @@ function updatePlayer(state: State, motion: Coordinate, log: Log): State {
     log(`Hit ${entity.type} for ${damage} damage`);
     entity.health -= damage; // TODO - damage?
 
-    playerState.actions.push({ type: 'damage', entity, damage, position: newPosition});
+    playerState.actions.push({
+      type: 'damage',
+      entity,
+      damage,
+      position: newPosition
+    });
 
     if (entity.health <= 0) {
       entity.alive = false;
@@ -210,13 +244,22 @@ export function reverseUpdate(state: State, key: string, log: Log): State {
     } else if (action.type === 'damage') {
       action.entity.health += action.damage;
 
-      if (action.entity.health > 0 && (action.entity.health - action.damage) <= 0) {
-        log(`The ${action.entity.type} comes back from the dead in front of your eyes.`);
+      if (
+        action.entity.health > 0 &&
+        action.entity.health - action.damage <= 0
+      ) {
+        log(
+          `The ${action.entity
+            .type} comes back from the dead in front of your eyes.`
+        );
         action.entity.alive = true;
         undeadify(state, action.entity, action.position);
       }
 
-      log(`The ${action.entity.type} heals ${action.damage} points as your wound is undone.`);
+      log(
+        `The ${action.entity
+          .type} heals ${action.damage} points as your wound is undone.`
+      );
     }
   }
 
@@ -287,4 +330,82 @@ export function loadMap(map: string): State {
     groundTiles,
     wallTiles
   };
+}
+
+function flatten<T>(arr: Array<Array<T>>): Array<T> {
+  return arr.reduce((acc, val) => acc.concat(val), []);
+}
+
+function checkTileVisible(
+  state: State,
+  playerPosition: Coordinate,
+  coordinate: Coordinate
+): boolean {
+  const difference = subtract(coordinate, playerPosition);
+  const normalized = normalize(difference);
+
+  let position = {...coordinate};
+  let hitWall = false;
+
+  while (!hitWall && position !== playerPosition) {
+    const difference = subtract(position, playerPosition);
+    const distance = length(difference);
+
+    if (Math.abs(distance) <= 1) {
+      position = playerPosition;
+    } else {
+      subtractMutable(position, normalized);
+    }
+
+    hitWall =
+      hitWall ||
+      state.wallTiles.has(
+        makeCoordinate(Math.round(position.row), Math.round(position.column))
+      );
+  }
+
+  return !hitWall;
+}
+
+const directions = [
+  makeCoordinate(0.5, 0),
+  makeCoordinate(-0.5, 0),
+  makeCoordinate(0, 0.5),
+  makeCoordinate(0, -0.5),
+  makeCoordinate(0.5, -0.5),
+  makeCoordinate(-0.5, -0.5),
+  makeCoordinate(-0.5, 0.5),
+  makeCoordinate(0.5, 0.5)
+];
+
+
+export function calculateVisibleTiles(
+  coordinates: Coordinate[][],
+  state: State
+): Set<Coordinate> {
+  const playerPosition = state.playerPosition;
+  state;
+
+  return new Set(
+    flatten(coordinates).filter(coordinate => {
+      return (
+        directions.map(direction => checkTileVisible(state, playerPosition, add(coordinate, direction))).some(a => a)
+      );
+    })
+  );
+
+  // simplest and slowest way
+  // for each coordinate in bounds, cast a ray to the player position
+  // if the ray encounters a wall, it is not visible
+  // otherwise it is
+}
+
+export function makeCoordinates(state: State): Coordinate[][] {
+  return Array(state.height)
+    .fill(0)
+    .map((_, row) =>
+      Array(state.width)
+        .fill(0)
+        .map((__, column) => makeCoordinate(row, column))
+    );
 }
